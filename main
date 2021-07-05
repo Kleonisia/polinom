@@ -1,0 +1,1642 @@
+#include <SFML/Graphics.hpp>
+#include <iostream>
+#include <string>
+#include <fstream>
+using namespace std;
+using namespace sf;
+int count_poly = 0;
+struct node {
+    char znak;
+    int deg;
+    int coeff;
+    node* prev;
+    node* next;
+};
+struct base {
+    node* list;
+    base* prev;
+    base* next;
+};
+bool check = false;
+node* L = NULL;
+//base* a = new base;
+base* a = NULL;
+enum States {
+    State_Start,
+    State_Num,
+    State_Var,
+    State_Degree,
+    State_Promezh,
+    State_Error
+};
+string draw_list(node* p) {
+    string s = "";
+    if (p == NULL) {
+        return s;
+    }              
+    if (p->znak == '-') {
+        s += p->znak;
+    }
+    if (p->deg == 0) {
+        s += to_string(p->coeff);
+        return s;
+    }
+    else {
+        if (p->coeff == 0 and p->next == NULL) {
+            s += "0";
+            return s;
+        }
+        else if (p->coeff != 1 and p->coeff != 0) {
+            s += to_string(p->coeff);
+        }
+        if (p->deg == 1) {
+            s += "x";
+        }
+        else {
+            s += "x^";
+            s += to_string(p->deg);
+        }
+        p = p->next;
+    }
+    while (p != NULL) {        
+        if (p->deg == 0) {
+            if (p->coeff != 0) {
+                s += p->znak;
+                s += to_string(p->coeff);
+            }
+            return s;
+        }
+        else {            
+            if (p->coeff != 0) {
+                s += p->znak;
+                if (p->coeff != 1) {
+                    s += to_string(p->coeff);
+                }
+                if (p->deg == 1) {
+                    s += "x";
+                }
+                else {
+                    s += "x^";
+                    s += to_string(p->deg);
+                }
+            }
+            p = p->next;
+        }
+    }
+    return s;
+}
+void draw_base(RenderWindow& window_base, base*& a) {
+    base* q = a;
+    Font font;
+    font.loadFromFile("times-new-roman.ttf");
+    Text text;
+    string k = "", s = "";
+    text.setFont(font);
+    text.setCharacterSize(30);
+    text.setFillColor(Color(57, 53, 42));
+    int NumList = 1;
+    Vector2f coordinate = Vector2f(5.f, 70.f);
+    while (q != NULL) {
+        coordinate.x = 5;
+        text.setPosition(coordinate);
+        s += to_string(NumList);
+        NumList++;
+        s += ". ";
+        text.setString(s);
+        window_base.draw(text);
+        coordinate.x += 45;
+        text.setPosition(coordinate);
+        if (q->list != NULL) {
+            k = draw_list(q->list);
+        }
+        text.setString(k);
+        window_base.draw(text); 
+        coordinate.y += 40;
+        q = q->next;
+        s = "";
+    }
+    return;
+}
+node* list_by_num(int n) {
+    base* p = a;
+    for (int i = 1; i < n; i++) {
+        p = p->next;
+    }
+    if (p == NULL) {
+        return NULL;
+    }
+    return p->list;
+}
+void del_list(base*& p) {
+    base* q = p;
+    if (p->prev == NULL) {
+        a = p->next;
+    }
+    else {
+        p->prev->next = p->next;
+    }
+    if (p->next != NULL) {
+        p->next->prev = p->prev;
+    }
+    delete(q);
+    return;    
+}
+void del_list_from_base(int n, base*& a) {
+    if (n == 0) {
+        return;
+    }
+    base* p = a;
+    int number = 1;
+    while (number != n) {
+        p = p->next;
+        number++;
+    }
+    del_list(p);
+    return;
+}
+void insert(base*& a, node* L) {
+    base* q = new base;
+    q->next = a;
+    if (a != NULL) {
+        q->next->prev = q;
+    }
+    q->prev = NULL;
+    a = q;
+    q->list = L;
+    return;
+}
+void ins_after(node*& p, int x) {
+    node* q = new node;
+    q->deg = x;
+    q->next = p->next;
+    q->prev = p;
+    if (p->next != NULL) p->next->prev = q;
+    p->next = q;
+    return;
+}
+void ins_head(node*& p, int x) {
+    node* r = new node;
+    r->deg = x;
+    r->next = p;
+    r->prev = NULL;
+    p = r;
+    return;
+}
+void ins_before(node*& p, int x) {
+    node* q = new node;
+    q->deg = x;
+    q->next = p;
+    q->prev = p->prev;
+    p->prev->next = q;
+    p->prev = q;
+    return;
+}
+void insert_degree(int degree, node*& L) {
+    if (L == NULL) {
+        ins_head(L, degree);
+        L->coeff = 0;
+        L->znak = '+';
+        return;
+    }
+    else if (L->deg < degree) {
+        ins_head(L, degree);
+        L->coeff = 0;
+        L->znak = '+';
+        return;
+    }
+    node* q = L;
+    while (q != NULL) {
+        if (q->prev != NULL and q->prev->deg > degree and q->deg < degree) {
+            ins_before(q, degree);
+            q = q->prev;
+            q->coeff = 0;
+            q->znak = '+';
+            return;
+        }
+        if (q->deg == degree) {
+            return;
+        }
+        if (q->next == NULL) {
+            break;
+        }
+        q = q->next;
+    }    
+    ins_after(q, degree);
+    q = q->next;
+    q->coeff = 0;
+    q->znak = '+';
+    return;
+}
+void insert_num_znak(int num, char k, int degree, node*& L) {
+    node* q = L;
+    while (q != NULL) {
+        if (q->deg == degree) {
+            if (q->znak == '+' and k == '-') {
+                q->coeff = q->coeff - num;
+                if (q->coeff == 0) {
+                    q->deg = 0;
+                    q->znak = '+';
+                }
+                else if (q->coeff > 0) {
+                    q->znak = '+';
+                }
+                else {
+                    q->znak = '-';
+                    q->coeff = -q->coeff;
+                }
+                return;
+            }
+            if (q->znak == '+' and k == '+') {
+                q->coeff = q->coeff + num;
+                q->znak = '+';
+                return;
+            }
+            if (q->znak == '-' and k == '+') {
+                q->coeff = -q->coeff + num;
+                if (q->coeff == 0) {
+                    q->deg = 0; 
+                    q->znak = '+';
+                }
+                if (q->coeff >  0) {
+                    q->znak = '+';
+                }
+                else {
+                    q->znak = '-';
+                    q->coeff = -q->coeff;
+                }
+                return;
+            }
+            if (q->znak == '-' and k == '-') {
+                q->coeff = q->coeff + num;
+                q->znak = '-';
+                return;
+            }
+        }
+        q = q->next;
+    }
+    return;
+}
+void poly(string s) {
+    int len = s.size();
+    States state = State_Start;
+    int num = -1;
+    int degree = 0;
+    char t = 120;
+    char sign = '+';
+    int i = 0;
+    if (s[0] == '-') {
+        sign = s[i];
+        i++;
+    }
+    for (i; i < len; i++) {
+        char curr = s[i];
+        switch (state) {
+        case State_Start:           
+            if (curr >= '0' and curr <= '9') {
+                state = State_Num;
+                num = (curr - '0');
+                if (i == len - 1) {
+                    insert_degree(degree, L);
+                    insert_num_znak(num, sign, degree, L);
+                    break;
+                }
+            }
+            else if (curr >= 'a' and curr <= 'z') {                
+                if (i == len - 1) {
+                    insert_degree(1, L);
+                    insert_num_znak(1, sign, 1, L);
+                    break;
+                }
+                state = State_Var;
+                //t = curr;
+
+            }
+            else {
+                state = State_Error;
+                break;
+            }
+            break;
+        case State_Num:
+            if (curr >= '0' and curr <= '9') {
+                num = num * 10 + (curr - '0');
+                if (i == len - 1) {
+                    insert_degree(0, L);
+                    insert_num_znak(num, sign, 0, L);
+                }
+            }
+            else if (curr == '-' or curr == '+') {
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+                state = State_Start;
+                insert_degree(degree, L);
+                insert_num_znak(num, sign, degree, L);
+                degree = 0;
+                num = -1;
+                sign = curr;
+            }
+            else if (curr == '*') {
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+                state = State_Promezh;
+            }
+            else if (curr >= 'a' and curr <= 'z') {
+                state = State_Var;
+                if (i == len - 1) {
+                    insert_degree(1, L);
+                    insert_num_znak(num, sign, 1, L);
+                }
+            }
+            else {
+                state = State_Error;
+            }            
+            break;        
+        case State_Promezh:
+            if (curr >= 'a' and curr <= 'z') {   
+                state = State_Var;
+                t = curr;
+                if (i == len - 1) {
+                    insert_degree(degree, L);
+                    insert_num_znak(num, sign, degree, L);
+                    break;
+                }
+            }
+            else {
+                state = State_Error;
+                break;
+            }            
+            break;
+        case State_Var:
+            if (curr == '^') {
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+                state = State_Degree;
+            }
+            else if (curr == '+' or curr == '-') {
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+                state = State_Start;
+                insert_degree(1, L);
+                if (num == -1) {
+                    num = 1;
+                }
+                insert_num_znak(num, sign, 1, L);
+                degree = 0;
+                num = -1;
+                sign = curr;
+            }
+            else if (curr == '*') {
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+                state = State_Promezh;
+            }
+            else {
+                state = State_Error;
+            }
+            break;
+        case State_Degree:
+            if (curr >= '0' and curr <= '9') {                    
+                degree = degree * 10 + (curr - '0');
+                if (i == len - 1) {
+                    if (num == -1) {
+                        num = 1;
+                    }
+                    insert_degree(degree, L);
+                    insert_num_znak(num, sign, degree, L);
+                    state = State_Start;
+                    degree = 0;
+                    num = -1;
+                    sign = curr;
+                }
+            }
+            else if (curr == '-' or curr == '+') {
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+                if (num == -1) {
+                    num = 1;
+                }
+                insert_degree(degree, L);
+                insert_num_znak(num, sign, degree, L);
+                state = State_Start;
+                degree = 0;
+                num = -1;
+                sign = curr;
+            }
+            else if (curr == '*') {
+                state = State_Promezh;
+                if (i == len - 1) {
+                    state = State_Error;
+                    break;
+                }
+            }
+            else {
+                state = State_Error;
+                break;
+            }            
+            break;
+        case State_Error:
+            check = true;    
+            return;
+        }
+    }
+    if (state == State_Error) {
+        check = true;
+    }
+    return;
+}
+node* first_derivative(node* q) {
+    node* p = NULL;
+    while (q != NULL) {
+        if (q->deg > 0) {
+            insert_degree(q->deg - 1, p);
+            insert_num_znak(q->coeff * q->deg, q->znak, q->deg - 1, p);
+        }
+        else {
+            insert_degree(0, p);
+            insert_num_znak(0, q->znak, 0, p);
+        }
+        q = q->next;
+    }
+    return p;
+}
+pair<string, node*> derivative(int der, int n) {
+    node* p = list_by_num(n);
+    for (int i = 0; i < der; i++) {
+        p = first_derivative(p);
+    }
+    string s = draw_list(p);
+    return pair<string, node*> (s, p);
+}
+int count_one_term(int degree, int coeff, int arg) {
+    int res = 1;
+    for (int i = 0; i < degree; i++) {
+        res *= arg;
+    }
+    res *= coeff;
+    return res;
+}
+int f_val(int arg, node* p) {    
+    int res = 0;
+    while (p != NULL) {
+        if (p->znak == '-') {
+            res += (-count_one_term(p->deg, p->coeff, arg));
+        }
+        else {
+            res += count_one_term(p->deg, p->coeff, arg);
+        }
+        p = p->next;
+    }
+    return res;
+}
+string function_value(int arg, int num) {
+    node* p = list_by_num(num);
+    return to_string(f_val(arg, p));
+}
+bool check_zero(node* p) {
+    while (p != NULL) {
+        if (p->deg == 0) {
+            return true;
+        }
+        p = p->next;
+    }
+    return false;
+}
+int last_term(node* p) {
+    while (p->next != NULL) {
+        p = p->next;
+    }
+    return p->coeff;
+}
+void f_roots(node* p, string& s) {
+    int a0 = last_term(p);
+    for (int i = 1; i <= a0; i++) {
+        if (a0 % i == 0) {
+            if (f_val(i, p) == 0) {
+                s += to_string(i);
+                s += " ";
+            }
+            if (f_val(-i, p) == 0) {
+                s += to_string(-i);
+                s += " ";
+            }
+        }
+    }
+}
+node* change(node* p) {
+    node* q = p;
+    if (q == NULL) {
+        return NULL;
+    }
+    while (q->next != NULL) {
+        q = q->next;
+    }
+    node* r = NULL;
+    while (p != NULL) {
+        insert_degree((p->deg - q->deg), r);
+        insert_num_znak(p->coeff, p->znak, (p->deg - q->deg), r);
+        p = p->next;
+    }
+    return r;
+}
+string roots(int num) {
+    node* p = list_by_num(num);
+    string s = "";
+    if (p->coeff == 0) {
+        return "ANY ROOT";
+    }
+    if (!check_zero(p)) {
+        s += "0 ";
+        p = change(p);
+        f_roots(p, s);
+    }
+    else {
+        f_roots(p, s);
+    }
+    if (s == "") {
+        return "NO INTEGER ROOTS";
+    }
+    return s;
+}
+node* merge_sort(node* p, node* q) {
+    node* r = NULL;
+    while (p != NULL and q != NULL) {
+        if (p->deg > q->deg) {
+            insert_degree(p->deg, r);
+            insert_num_znak(p->coeff, p->znak, p->deg, r);
+            p = p->next;
+        }
+        else if (p->deg == q->deg) {
+            if (p->znak == '+' and q->znak == '+') {
+                insert_degree(p->deg, r);
+                insert_num_znak(p->coeff + q->coeff, '+', p->deg, r);
+            }
+            else if (p->znak == '-' and q->znak == '-') {
+                insert_degree(p->deg, r);
+                insert_num_znak((p->coeff + q->coeff), '-', p->deg, r);
+            }
+            else if (p->znak == '-' and q->znak == '+') {
+                if (q->coeff - p->coeff > 0) {
+                    insert_degree(p->deg, r);
+                    insert_num_znak(q->coeff - p->coeff, '+', p->deg, r);
+                }
+                if (q->coeff - p->coeff == 0) {
+                    insert_degree(0, r);
+                    insert_num_znak(0, '+', 0, r);
+                }
+                if (q->coeff - p->coeff < 0) {
+                    insert_degree(p->deg, r);
+                    insert_num_znak(p->coeff - q->coeff, '-', p->deg, r);
+                }               
+            }
+            else if (p->znak == '+' and q->znak == '-') {
+                if (-q->coeff + p->coeff > 0) {
+                    insert_degree(p->deg, r);
+                    insert_num_znak(-q->coeff + p->coeff, '+', p->deg, r);
+                }
+                if (q->coeff - p->coeff == 0) {
+                    insert_degree(0, r);
+                    insert_num_znak(0, '+', 0, r);
+                }
+                if (q->coeff - p->coeff < 0) {
+                    insert_degree(p->deg, r);
+                    insert_num_znak(-p->coeff + q->coeff, '-', p->deg, r);
+                }
+            }
+            q = q->next;
+            p = p->next;
+        }
+        else {
+            insert_degree(q->deg, r);
+            insert_num_znak(q->coeff, q->znak, q->deg, r);
+            q = q->next;
+        }        
+    }
+    while (p != NULL) {
+        insert_degree(p->deg, r);
+        insert_num_znak(p->coeff, p->znak, p->deg, r);
+        p = p->next;
+    }
+    while (q != NULL) {
+        insert_degree(q->deg, r);
+        insert_num_znak(q->coeff, q->znak, q->deg, r);
+        q = q->next;
+    }
+    return r;
+}
+pair <string, node*> merge(int first, int second) {
+    if (first == second) {
+        return pair<string, node*>("THESE POLYNOMS ARE SAME", NULL);
+    }
+    node* p = list_by_num(first);
+    node* q = list_by_num(second);
+    node* r = merge_sort(p, q);
+    string s = draw_list(r);    
+    return pair<string, node*> (s, r);
+}
+node* mul(node* p, node* q) {
+    node* r = NULL;
+    node* d = q;
+    while (p != NULL) {
+        d = q;
+        while (d != NULL) {
+            insert_degree(p->deg + d->deg, r);
+            if (p->znak == '-' and d->znak == '-' or p->znak == '+' and d->znak == '+') {
+                insert_num_znak(p->coeff * d->coeff, '+', p->deg + d->deg, r);
+            }
+            else {
+                insert_num_znak(p->coeff * d->coeff, '-', p->deg + d->deg, r);
+            }
+            d = d->next;
+        }
+        p = p->next;
+    }
+    return r;
+}
+pair<string, node*> multiplication(int first, int second) {
+    if (first == second) {
+        return pair<string, node*> ("THESE POLYNOMS ARE SAME", NULL);
+    }
+    node* p = list_by_num(first);
+    node* q = list_by_num(second);
+    node* r = mul(p, q);
+    string s = draw_list(r);
+
+    return pair<string, node*> (s, r);
+}
+void change_sign(node* r) {
+    while (r != NULL) {
+        if (r->znak == '+') {
+            r->znak = '-';
+        }
+        else {
+            r->znak = '+';
+        }
+        r = r->next;
+    }
+    return;
+}
+pair<pair<string, node*>, pair<string, node*> > division(int first, int second) {
+    if (first == second) {
+        return pair<pair<string, node*>, pair<string, node*> > (pair < string, node*> ("THESE POLYNOMS ARE SAME", NULL)
+            , pair < string, node*>("", NULL));
+    }
+    node* p = list_by_num(first);
+    node* q = list_by_num(second);
+    node* remain = NULL;
+    node* quot = NULL;
+    node* curr = new node;
+    curr->next = NULL;
+    curr->prev = NULL;
+    node* r = NULL;
+    while (p->deg > q->deg or (p->deg == q->deg and p->coeff >= q->coeff)) {
+        if (p->coeff % q->coeff != 0) {
+            return pair<pair<string, node*>, pair<string, node*> >(pair < string, node*> ("CAN'T DO THIS DIVISION", NULL)
+                , pair < string, node*>("", NULL));
+        }
+        insert_degree(p->deg - q->deg, quot);
+        if (p->znak != q->znak) {
+            insert_num_znak(p->coeff / q->coeff, '-', p->deg - q->deg, quot);
+            curr->znak = '+';
+        }
+        else {
+            insert_num_znak(p->coeff / q->coeff, '+', p->deg - q->deg, quot);
+            curr->znak = '-';
+        }        
+        curr->coeff = p->coeff / q->coeff;
+        curr->deg = p->deg - q->deg;
+        r = mul(curr, q);
+        p = merge_sort(r, p);
+    }
+    remain = p;
+    return pair<pair<string, node*>, pair<string, node*> >(pair<string, node*>(draw_list(quot), quot)
+        , pair<string, node*>(draw_list(remain), remain));
+}
+void import_from_file(base*& a) {
+    ifstream fin;
+    fin.open("fin.txt");
+    string s = "";
+    while (!fin.eof()) {
+        getline(fin, s);
+        poly(s);
+        insert(a, L);
+        count_poly++;
+        L = NULL;
+    }
+    fin.close();
+    return;
+}
+int main() {
+    /*//import_from_file(a);
+    int n;
+    string str = "";
+    cin >> n;
+    getline(cin, str);
+    for (int i = 0; i < n; i++) {
+        getline(cin, str);
+        poly(str);
+        if (check) {
+            cout << "fail";
+            return 0;
+        }
+        cout << draw_list(L);
+        insert(a, L);        
+        L = NULL;
+    }
+    //cout << division(1, 2).first << " " << division(1, 2).second;
+    */
+    Font font;
+    font.loadFromFile("times-new-roman.ttf");
+    RenderWindow window_base(VideoMode(800, 600), "Base of polynoms");
+    RenderWindow window_add;
+    RenderWindow window_del;
+    RenderWindow window_poly;
+    RectangleShape shape(Vector2f(85.f, 50.f));
+    RectangleShape del(Vector2f(80.f, 50.f)); 
+    RectangleShape addition_shape(Vector2f(80.f, 50.f));
+    addition_shape.setPosition(Vector2f(280.f, 5.f));
+    addition_shape.setOutlineThickness(2.f);
+    addition_shape.setOutlineColor(Color::Black);
+    Text addition_inscription;
+    addition_inscription.setFont(font);
+    addition_inscription.setCharacterSize(20);
+    addition_inscription.setString("+");
+    addition_inscription.setPosition(Vector2f(315.f, 15.f));
+    addition_inscription.setFillColor(Color::Black);
+    RectangleShape mul_shape(Vector2f(80.f, 50.f));
+    mul_shape.setPosition(Vector2f(370.f, 5.f));
+    mul_shape.setOutlineThickness(2.f);
+    mul_shape.setOutlineColor(Color::Black);
+    Text mul_inscription;
+    mul_inscription.setFont(font);
+    mul_inscription.setCharacterSize(20);
+    mul_inscription.setString("*");
+    mul_inscription.setPosition(Vector2f(405.f, 15.f));
+    mul_inscription.setFillColor(Color::Black);
+    RectangleShape div_shape(Vector2f(80.f, 50.f));
+    div_shape.setPosition(Vector2f(460.f, 5.f));
+    div_shape.setOutlineThickness(2.f);
+    div_shape.setOutlineColor(Color::Black);
+    Text div_inscription;
+    div_inscription.setFont(font);
+    div_inscription.setCharacterSize(20);
+    div_inscription.setString("/");
+    div_inscription.setPosition(Vector2f(495.f, 15.f));
+    div_inscription.setFillColor(Color::Black);
+    shape.setPosition(Vector2f(5.f, 5.f));
+    shape.setOutlineThickness(2.f);
+    shape.setOutlineColor(Color::Black);
+    del.setPosition(Vector2f(100.f, 5.f));
+    del.setOutlineThickness(2.f);
+    del.setOutlineColor(Color::Black);
+    Text del_inscription;
+    del_inscription.setFont(font);
+    del_inscription.setCharacterSize(20);
+    del_inscription.setString("Del poly");
+    del_inscription.setPosition(Vector2f(105.f, 12.f));
+    del_inscription.setFillColor(Color::Black);
+    Text inscription;
+    inscription.setFont(font);
+    inscription.setCharacterSize(20);
+    inscription.setString("Add poly");
+    inscription.setPosition(Vector2f(8.f, 12.f));
+    inscription.setFillColor(Color::Black);
+    Text draw_poly;
+    draw_poly.setFont(font);
+    draw_poly.setCharacterSize(20);
+    draw_poly.setFillColor(Color::White);
+    RectangleShape input_bar(Vector2f(300.f, 2.f));
+    input_bar.setFillColor(Color::Black);
+    input_bar.setPosition(Vector2f(50.f, 100.f));
+    Text text_poly;    
+    text_poly.setFont(font);
+    text_poly.setPosition(Vector2f(50.f, 50.f));
+    text_poly.setFillColor(Color::Black);      
+    RectangleShape import_shape(Vector2f(160.f, 50.f));
+    import_shape.setPosition(Vector2f(550.f, 5.f));
+    import_shape.setOutlineThickness(2.f);
+    import_shape.setOutlineColor(Color::Red);
+    Text import_poly;
+    import_poly.setFont(font);
+    import_poly.setPosition(552.f, 5.f);
+    import_poly.setFillColor(Color::Black);
+    import_poly.setCharacterSize(24);
+    import_poly.setString("Import Polynom");
+    int num_del = 0;   
+    while (window_base.isOpen()) {
+        Event event1;        
+        while (window_base.pollEvent(event1)) {
+            if (event1.type == Event::Closed or
+                (event1.type == Event::KeyPressed and event1.key.code == Keyboard::Escape)) {
+                window_base.close();
+            }
+            //add
+            else if (Mouse::getPosition(window_base).x >= 5.f and Mouse::getPosition(window_base).x <= 85.f
+                and Mouse::getPosition(window_base).y <= 55.f and Mouse::getPosition(window_base).y >= 5.f
+                and Mouse::isButtonPressed(Mouse::Left)) {
+                int t = 0;
+                string str = "", s = "";
+                window_add.create(VideoMode(400, 200), "Add polynom");                
+                while (window_add.isOpen()) {
+                    Event event2;                    
+                    while (window_add.pollEvent(event2)) {
+                        if (event2.type == Event::Closed or 
+                            (event2.type == Event::KeyPressed and event2.key.code == Keyboard::Escape)) {
+                            window_add.close();
+                        }
+                        if (event2.type == Event::KeyPressed and event2.key.code == Keyboard::BackSpace) {
+                            t--;
+                            for (int i = 0; i < t; i++) {
+                                s += str[i];
+                            }
+                            str = s;
+                            s = "";
+                            text_poly.setString(str);
+                        }
+                        else if (event2.type == Event::KeyPressed and event2.key.code == Keyboard::Enter) {
+                            count_poly++;
+                            poly(str);                            
+                            str = "";
+                            t = 0;
+                            text_poly.setString("");
+                            insert(a, L);
+                            L = NULL;
+                            window_add.close();
+                        }
+                        else if (event2.type == Event::TextEntered and event2.text.unicode >= 32
+                            and event2.text.unicode <= 127) {
+                            str += event2.text.unicode;                            
+                            t++;
+                            text_poly.setString(str);
+                        }                        
+                    }
+                    window_add.clear(Color::White);
+                    window_add.draw(input_bar);
+                    window_add.draw(text_poly);
+                    window_add.display();
+                }
+            }
+            //delete
+            else if (Mouse::getPosition(window_base).x >= 100.f and Mouse::getPosition(window_base).x <= 180.f
+                and Mouse::getPosition(window_base).y <= 55.f and Mouse::getPosition(window_base).y >= 5.f
+                and Mouse::isButtonPressed(Mouse::Left) and a!= NULL) {
+                int t = 0;
+                string str = "", s = "";
+                window_del.create(VideoMode(400, 200), "input number of polynom");
+                while (window_del.isOpen()) {
+                    Event event3;
+                    while (window_del.pollEvent(event3)) {
+                        if (event3.type == Event::Closed or
+                            (event3.type == Event::KeyPressed and event3.key.code == Keyboard::Escape)) {
+                            window_del.close();
+                        }
+                        if (event3.type == Event::KeyPressed and event3.key.code == Keyboard::BackSpace) {
+                            t--;
+                            for (int i = 0; i < t; i++) {
+                                s += str[i];
+                            }
+                            str = s;
+                            s = "";
+                            text_poly.setString(str);
+                        }
+                        else if (event3.type == Event::KeyPressed and event3.key.code == Keyboard::Enter) {
+                            for (int i = 0; i < str.size(); i++) {
+                                num_del = num_del * 10 + (str[i] - '0');
+                            }                            
+                            if (num_del <= count_poly) {
+                                del_list_from_base(num_del, a);
+                                str = "";
+                                num_del = 0;
+                                count_poly--;
+                                text_poly.setString(str);
+                                window_del.close();
+                            }
+                            else {
+                                num_del = 0;
+                            }
+                        }
+                        else if (event3.type == Event::TextEntered and event3.text.unicode >= 32
+                            and event3.text.unicode <= 127) {
+                            str += event3.text.unicode;
+                            t++;
+                            text_poly.setString(str);
+                        }
+                    }
+                    window_del.clear(Color::White);
+                    window_del.draw(input_bar);
+                    window_del.draw(text_poly);
+                    window_del.display();
+                }                
+            }
+            //addition
+            else if (Mouse::getPosition(window_base).x >= 280.f and Mouse::getPosition(window_base).x <= 360.f
+                and Mouse::getPosition(window_base).y <= 55.f and Mouse::getPosition(window_base).y >= 5.f
+                and Mouse::isButtonPressed(Mouse::Left) and a != NULL and a->next != NULL) {
+                RenderWindow window_first(VideoMode(400, 200), "Input number of first polynom");
+                string str = "", s = "";
+                int t = 0;
+                int first_poly = 0;
+                int second_poly = 0;
+                Text text_first;
+                text_first.setFont(font);
+                text_first.setCharacterSize(20);
+                text_first.setPosition(Vector2f(50.f, 50.f));
+                text_first.setFillColor(Color::Black);
+                while (window_first.isOpen()) {
+                    Event event;
+                    while (window_first.pollEvent(event)) {
+                        if (event.type == Event::Closed or
+                            (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                            window_first.close();
+                        }
+                        if (event.type == Event::KeyPressed and event.key.code == Keyboard::BackSpace) {
+                            t--;
+                            for (int i = 0; i < t; i++) {
+                                s += str[i];
+                            }
+                            str = s;
+                            s = "";
+                            text_first.setString(str);
+                        }
+                        else if (event.type == Event::TextEntered and event.text.unicode >= 32
+                            and event.text.unicode <= 127) {
+                            str += event.text.unicode;
+                            t++;
+                            text_first.setString(str);
+                        }
+                        else if (event.type == Event::KeyPressed and event.key.code == Keyboard::Enter) {
+                            for (int i = 0; i < str.size(); i++) {
+                                first_poly = first_poly * 10 + (str[i] - '0');
+                            }
+                            window_first.close();
+                        }                                                                                                       
+
+                    }
+                    window_first.clear(Color::White);
+                    window_first.draw(text_first);
+                    window_first.display();
+                }
+                if (first_poly != 0 and first_poly <= count_poly) {
+                    RenderWindow window_second(VideoMode(400, 200), "Input number of second polynom");
+                    t = 0;
+                    str = "", s = "";
+                    Text text_second;
+                    text_second.setFont(font);
+                    text_second.setCharacterSize(20);
+                    text_second.setPosition(Vector2f(50.f, 50.f));
+                    text_second.setFillColor(Color::Black);
+                    while (window_second.isOpen()) {
+                        Event event;
+                        while (window_second.pollEvent(event)) {
+                            if (event.type == Event::Closed or
+                                (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                window_second.close();
+                            }
+                            if (event.type == Event::KeyPressed and event.key.code == Keyboard::BackSpace) {
+                                t--;
+                                for (int i = 0; i < t; i++) {
+                                    s += str[i];
+                                }
+                                str = s;
+                                s = "";
+                                text_second.setString(str);
+                            }
+                            else if (event.type == Event::TextEntered and event.text.unicode >= 32
+                                and event.text.unicode <= 127) {
+                                str += event.text.unicode;
+                                t++;
+                                text_second.setString(str);
+                            }
+                            else if (event.type == Event::KeyPressed and event.key.code == Keyboard::Enter) {
+                                for (int i = 0; i < str.size(); i++) {
+                                    second_poly = second_poly * 10 + (str[i] - '0');
+                                }
+                                window_second.close();
+                            }
+
+                        }
+                        window_second.clear(Color::White);
+                        window_second.draw(text_second);
+                        window_second.display();
+                    }
+                    RenderWindow window_addition(VideoMode(400, 200), "Result addition");
+                    Text text_addition;
+                    text_addition.setFont(font);
+                    text_addition.setCharacterSize(20);
+                    text_addition.setFillColor(Color::Black);
+                    text_addition.setString(merge(first_poly, second_poly).first);
+                    node* polynom = merge(first_poly, second_poly).second;
+                    RectangleShape shape_yes(Vector2f(70.f, 30.f));
+                    shape_yes.setFillColor(Color(1, 50, 32));
+                    shape_yes.setPosition(Vector2f(5.f, 50.f));
+                    while (window_addition.isOpen()) {
+                        Event event;
+                        while (window_addition.pollEvent(event)) {
+                            if (event.type == Event::Closed or
+                                (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                window_addition.close();
+                            }
+                            if (event.type == Event::MouseButtonPressed
+                                and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 5.f
+                                and event.mouseButton.x <= 75.f and event.mouseButton.y >= 50.f
+                                and event.mouseButton.y <= 85.f and polynom != NULL) {
+                                insert(a, polynom);
+                                count_poly++;
+                                window_addition.close();
+                            }
+
+                        }
+                        window_addition.clear(Color::White);   
+                        if (polynom != NULL) {
+                            window_addition.draw(shape_yes);
+                        }
+                        window_addition.draw(text_addition);
+                        window_addition.display();
+                    }
+                }
+            }
+            //mulitiplication
+            else if (Mouse::getPosition(window_base).x >= 365.f and Mouse::getPosition(window_base).x <= 445.f
+            and Mouse::getPosition(window_base).y <= 55.f and Mouse::getPosition(window_base).y >= 5.f
+            and Mouse::isButtonPressed(Mouse::Left) and a != NULL and a->next != NULL) {
+                RenderWindow window_first(VideoMode(400, 200), "Input number of first polynom");
+                string str = "", s = "";
+                int t = 0;
+                int first_poly = 0;
+                int second_poly = 0;
+                Text text_first;
+                text_first.setFont(font);
+                text_first.setCharacterSize(20);
+                text_first.setPosition(Vector2f(50.f, 50.f));
+                text_first.setFillColor(Color::Black);
+                while (window_first.isOpen()) {
+                    Event event;
+                    while (window_first.pollEvent(event)) {
+                        if (event.type == Event::Closed or
+                            (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                            window_first.close();
+                        }
+                        if (event.type == Event::KeyPressed and event.key.code == Keyboard::BackSpace) {
+                            t--;
+                            for (int i = 0; i < t; i++) {
+                                s += str[i];
+                            }
+                            str = s;
+                            s = "";
+                            text_first.setString(str);
+                        }
+                        else if (event.type == Event::TextEntered and event.text.unicode >= 32
+                            and event.text.unicode <= 127) {
+                            str += event.text.unicode;
+                            t++;
+                            text_first.setString(str);
+                        }
+                        else if (event.type == Event::KeyPressed and event.key.code == Keyboard::Enter) {
+                            for (int i = 0; i < str.size(); i++) {
+                                first_poly = first_poly * 10 + (str[i] - '0');
+                            }
+                            window_first.close();
+                        }
+
+                    }
+                    window_first.clear(Color::White);
+                    window_first.draw(text_first);
+                    window_first.display();
+                }
+                if (first_poly != 0 and first_poly <= count_poly) {
+                    RenderWindow window_second(VideoMode(400, 200), "Input number of second polynom");
+                    t = 0;
+                    str = "", s = "";
+                    Text text_second;
+                    text_second.setFont(font);
+                    text_second.setCharacterSize(20);
+                    text_second.setPosition(Vector2f(50.f, 50.f));
+                    text_second.setFillColor(Color::Black);
+                    while (window_second.isOpen()) {
+                        Event event;
+                        while (window_second.pollEvent(event)) {
+                            if (event.type == Event::Closed or
+                                (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                window_second.close();
+                            }
+                            if (event.type == Event::KeyPressed and event.key.code == Keyboard::BackSpace) {
+                                t--;
+                                for (int i = 0; i < t; i++) {
+                                    s += str[i];
+                                }
+                                str = s;
+                                s = "";
+                                text_second.setString(str);
+                            }
+                            else if (event.type == Event::TextEntered and event.text.unicode >= 32
+                                and event.text.unicode <= 127) {
+                                str += event.text.unicode;
+                                t++;
+                                text_second.setString(str);
+                            }
+                            else if (event.type == Event::KeyPressed and event.key.code == Keyboard::Enter) {
+                                for (int i = 0; i < str.size(); i++) {
+                                    second_poly = second_poly * 10 + (str[i] - '0');
+                                }
+                                window_second.close();
+                            }
+                        }
+                        window_second.clear(Color::White);
+                        window_second.draw(text_second);
+                        window_second.display();
+                    }
+                    RenderWindow window_mul(VideoMode(400, 200), "Result multiplication");
+                    Text text_mul;
+                    text_mul.setFont(font);
+                    text_mul.setCharacterSize(20);
+                    text_mul.setFillColor(Color::Black);
+                    //cout << multiplication(first_poly, second_poly) << endl;
+                    RectangleShape shape_yes(Vector2f(70.f, 30.f));
+                    shape_yes.setFillColor(Color(1, 50, 32));
+                    shape_yes.setPosition(Vector2f(5.f, 50.f));
+                    text_mul.setString(multiplication(first_poly, second_poly).first);                   
+                    node* polynom = multiplication(first_poly, second_poly).second;
+                    while (window_mul.isOpen()) {
+                        Event event;
+                        while (window_mul.pollEvent(event)) {
+                            if (event.type == Event::Closed or
+                                (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                window_mul.close();
+                            }
+                            if (event.type == Event::MouseButtonPressed
+                                and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 5.f
+                                and event.mouseButton.x <= 75.f and event.mouseButton.y >= 50.f
+                                and event.mouseButton.y <= 85.f and polynom != NULL) {
+                                insert(a, polynom);
+                                count_poly++;
+                                window_mul.close();
+                            }
+                        }
+                        window_mul.clear(Color::White);
+                        if (polynom != NULL) {
+                            window_mul.draw(shape_yes);
+                        }
+                        window_mul.draw(text_mul);
+                        window_mul.display();
+                    }
+                }
+            }
+            //division
+            else if (Mouse::getPosition(window_base).x >= 450.f and Mouse::getPosition(window_base).x <= 530.f
+            and Mouse::getPosition(window_base).y <= 55.f and Mouse::getPosition(window_base).y >= 5.f
+            and Mouse::isButtonPressed(Mouse::Left) and a != NULL and a->next != NULL) {
+                RenderWindow window_first(VideoMode(400, 200), "Input number of dividend");
+                string str = "", s = "";
+                int t = 0;
+                int first_poly = 0;
+                int second_poly = 0;
+                Text text_first;
+                text_first.setFont(font);
+                text_first.setCharacterSize(20);
+                text_first.setPosition(Vector2f(50.f, 50.f));
+                text_first.setFillColor(Color::Black);
+                while (window_first.isOpen()) {
+                    Event event;
+                    while (window_first.pollEvent(event)) {
+                        if (event.type == Event::Closed or
+                            (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                            window_first.close();
+                        }
+                        if (event.type == Event::KeyPressed and event.key.code == Keyboard::BackSpace) {
+                            t--;
+                            for (int i = 0; i < t; i++) {
+                                s += str[i];
+                            }
+                            str = s;
+                            s = "";
+                            text_first.setString(str);
+                        }
+                        else if (event.type == Event::TextEntered and event.text.unicode >= 32
+                            and event.text.unicode <= 127) {
+                            str += event.text.unicode;
+                            t++;
+                            text_first.setString(str);
+                        }
+                        else if (event.type == Event::KeyPressed and event.key.code == Keyboard::Enter) {
+                            for (int i = 0; i < str.size(); i++) {
+                                first_poly = first_poly * 10 + (str[i] - '0');
+                            }
+                            window_first.close();
+                        }
+
+                    }
+                    window_first.clear(Color::White);
+                    window_first.draw(text_first);
+                    window_first.display();
+                }
+                if (first_poly != 0 and first_poly <= count_poly) {
+                    RenderWindow window_second(VideoMode(400, 200), "Input number of divider");
+                    t = 0;
+                    str = "", s = "";
+                    Text text_second;
+                    text_second.setFont(font);
+                    text_second.setCharacterSize(20);
+                    text_second.setPosition(Vector2f(50.f, 50.f));
+                    text_second.setFillColor(Color::Black);
+                    while (window_second.isOpen()) {
+                        Event event;
+                        while (window_second.pollEvent(event)) {
+                            if (event.type == Event::Closed or
+                                (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                window_second.close();
+                            }
+                            if (event.type == Event::KeyPressed and event.key.code == Keyboard::BackSpace) {
+                                t--;
+                                for (int i = 0; i < t; i++) {
+                                    s += str[i];
+                                }
+                                str = s;
+                                s = "";
+                                text_second.setString(str);
+                            }
+                            else if (event.type == Event::TextEntered and event.text.unicode >= 32
+                                and event.text.unicode <= 127) {
+                                str += event.text.unicode;
+                                t++;
+                                text_second.setString(str);
+                            }
+                            else if (event.type == Event::KeyPressed and event.key.code == Keyboard::Enter) {
+                                for (int i = 0; i < str.size(); i++) {
+                                    second_poly = second_poly * 10 + (str[i] - '0');
+                                }
+                                window_second.close();
+                            }
+                        }
+                        window_second.clear(Color::White);
+                        window_second.draw(text_second);
+                        window_second.display();
+                    }
+                    RenderWindow window_div(VideoMode(400, 200), "Result division");
+                    Text text_remain;
+                    text_remain.setFont(font);
+                    text_remain.setCharacterSize(20);
+                    text_remain.setPosition(Vector2f(5.f, 50.f));
+                    text_remain.setFillColor(Color::Black);
+                    Text text_quot;
+                    text_quot.setFont(font);
+                    text_quot.setCharacterSize(20);
+                    text_quot.setPosition(Vector2f(5.f, 5.f));
+                    text_quot.setFillColor(Color::Black);
+                    RectangleShape shape_yes(Vector2f(70.f, 30.f));
+                    shape_yes.setFillColor(Color(1, 50, 32));
+                    shape_yes.setPosition(Vector2f(5.f, 100.f));
+                    //cout << multiplication(first_poly, second_poly) << endl;
+                    text_quot.setString(division(first_poly, second_poly).first.first);
+                    node* quot = division(first_poly, second_poly).first.second;
+                    text_remain.setString(division(first_poly, second_poly).second.first);
+                    node* remain = division(first_poly, second_poly).second.second;
+                    while (window_div.isOpen()) {
+                        Event event;
+                        while (window_div.pollEvent(event)) {
+                            if (event.type == Event::Closed or
+                                (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                window_div.close();
+                            }
+                            if (event.type == Event::MouseButtonPressed
+                                and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 5.f
+                                and event.mouseButton.x <= 75.f and event.mouseButton.y >= 100.f
+                                and event.mouseButton.y <= 135.f and quot != NULL and remain != NULL) {                                
+                                insert(a, remain);
+                                insert(a, quot);
+                                count_poly += 2;
+                                window_div.close();
+                            }
+                        }
+                        window_div.clear(Color::White);
+                        if (quot != NULL and remain != NULL) {
+                            window_div.draw(shape_yes);
+                        }
+                        window_div.draw(text_quot);
+                        window_div.draw(text_remain);
+                        window_div.display();
+                    }
+                }
+            }
+            //import
+            else if (Mouse::getPosition(window_base).x >= 550.f and Mouse::getPosition(window_base).x <= 670.f
+            and Mouse::getPosition(window_base).y <= 55.f and Mouse::getPosition(window_base).y >= 5.f
+            and event1.type == Event::MouseButtonReleased and event1.mouseButton.button == Mouse::Left) {
+                import_from_file(a);                
+            }
+            //poly
+            else if (event1.type == Event::MouseButtonPressed and event1.mouseButton.button == Mouse::Left and a != NULL) {
+                if (Mouse::getPosition(window_base).y > 70) {
+                    Vector2f coor_poly = Vector2f(0.f, Mouse::getPosition(window_base).y - 70);
+                    int num_poly = 1 + coor_poly.y / 40;
+                    RectangleShape shape_del(Vector2f(80.f, 50.f));
+                    shape_del.setOutlineThickness(2.f);
+                    shape_del.setOutlineColor(Color::Black);
+                    shape_del.setPosition(Vector2f(3.f, 60.f));
+                    shape_del.setFillColor(Color(0, 0, 139));
+                    Text text_del;
+                    text_del.setFont(font);
+                    text_del.setCharacterSize(17);
+                    text_del.setPosition(Vector2f(5.f, 65.f));
+                    text_del.setFillColor(Color::White);
+                    text_del.setString("Del poly");
+                    RectangleShape shape_der(Vector2f(80.f, 50.f));
+                    shape_der.setOutlineThickness(2.f);
+                    shape_der.setOutlineColor(Color::Black);
+                    shape_der.setPosition(Vector2f(3.f, 120.f));
+                    shape_der.setFillColor(Color(0, 0, 139));
+                    Text text_der;
+                    text_der.setFont(font);
+                    text_der.setCharacterSize(17);
+                    text_der.setPosition(Vector2f(5.f, 125.f));
+                    text_der.setFillColor(Color::White);
+                    text_der.setString("Derivative");
+                    RectangleShape shape_val(Vector2f(120.f, 50.f));
+                    shape_val.setOutlineThickness(2.f);
+                    shape_val.setOutlineColor(Color::Black);
+                    shape_val.setPosition(Vector2f(3.f, 180.f));
+                    shape_val.setFillColor(Color(0, 0, 139));
+                    Text text_val;
+                    text_val.setFont(font);
+                    text_val.setCharacterSize(17);
+                    text_val.setPosition(Vector2f(5.f, 185.f));
+                    text_val.setFillColor(Color::White);
+                    text_val.setString("Function Value");
+                    RectangleShape shape_roots(Vector2f(60.f, 50.f));
+                    shape_roots.setOutlineThickness(2.f);
+                    shape_roots.setOutlineColor(Color::Black);
+                    shape_roots.setPosition(Vector2f(3.f, 240.f));
+                    shape_roots.setFillColor(Color(0, 0, 139));
+                    Text text_roots;
+                    text_roots.setFont(font);
+                    text_roots.setCharacterSize(17);
+                    text_roots.setPosition(Vector2f(5.f, 245.f));
+                    text_roots.setFillColor(Color::White);
+                    text_roots.setString("Roots");
+                    if (num_poly <= count_poly) {
+                        window_poly.create(VideoMode(600, 400), "Poly");
+                        while (window_poly.isOpen()) {
+                            Event event;
+                            window_poly.clear(Color(0, 33, 55));
+                            while (window_poly.pollEvent(event)) {
+                                if (event.type == Event::Closed or
+                                    (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                                    window_poly.close();
+                                }
+                                if (event.type == Event::MouseButtonPressed and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 3.f and event.mouseButton.x <= 83.f and event.mouseButton.y >= 60.f
+                                and event.mouseButton.y <= 110.f) {
+                                    count_poly--;
+                                    del_list_from_base(num_poly, a);
+                                    window_poly.close();
+                                }
+                                if (event.type == Event::MouseButtonPressed and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 3.f and event.mouseButton.x <= 83.f and event.mouseButton.y >= 120.f
+                                and event.mouseButton.y <= 170.f) {
+                                    RenderWindow window_in_der(VideoMode(400, 200), "Input number of derivative");
+                                    string str = "", s = "";
+                                    int t = 0;
+                                    int der = 0;
+                                    Text text_der;
+                                    text_der.setFont(font);
+                                    text_der.setCharacterSize(20);
+                                    text_der.setPosition(Vector2f(50.f, 50.f));
+                                    text_der.setFillColor(Color::Black);
+                                    Text deriv;
+                                    deriv.setFont(font);
+                                    deriv.setCharacterSize(20);
+                                    deriv.setPosition(Vector2f(50.f, 50.f));
+                                    deriv.setFillColor(Color::Black);
+                                    while (window_in_der.isOpen()) {
+                                        Event event_in_der;
+                                        window_in_der.clear(Color::White);
+                                        while (window_in_der.pollEvent(event_in_der)) {
+                                            if (event_in_der.type == Event::Closed or
+                                            (event_in_der.type == Event::KeyPressed and event_in_der.key.code == Keyboard::Escape)) {
+                                                window_in_der.close();
+                                            }
+                                            if (event_in_der.type == Event::KeyPressed and event_in_der.key.code == Keyboard::BackSpace) {
+                                                t--;
+                                                for (int i = 0; i < t; i++) {
+                                                    s += str[i];
+                                                }
+                                                str = s;
+                                                s = "";
+                                                text_der.setString(str);
+                                            }                                            
+                                            else if (event_in_der.type == Event::TextEntered and event_in_der.text.unicode >= 32
+                                            and event_in_der.text.unicode <= 127) {
+                                                str += event_in_der.text.unicode;
+                                                t++;
+                                                text_der.setString(str);
+                                            }
+                                            else if (event_in_der.type == Event::KeyPressed and event_in_der.key.code == Keyboard::Enter) {
+                                                window_in_der.close();
+                                                for (int i = 0; i < str.size(); i++) {
+                                                    der = der * 10 + (str[i] - '0');
+                                                }                                                                                                
+                                                deriv.setPosition(Vector2f(50.f, 50.f));
+                                                deriv.setString(derivative(der, num_poly).first);
+                                                node* polynom = derivative(der, num_poly).second;
+                                                RenderWindow window_der(VideoMode(400, 200), "Derivative");
+                                                RectangleShape shape_yes(Vector2f(70.f, 30.f));                                                
+                                                shape_yes.setFillColor(Color(1, 50, 32));                                                
+                                                shape_yes.setPosition(Vector2f(5.f, 5.f));
+                                                while (window_der.isOpen()) {
+                                                    Event event_der;                                                        
+                                                    while (window_der.pollEvent(event_der)) {
+                                                        if (event_der.type == Event::Closed or
+                                                            (event_der.type == Event::KeyPressed
+                                                                and event_der.key.code == Keyboard::Escape)) {
+                                                            window_der.close();
+                                                        }
+                                                        if (event_der.type == Event::MouseButtonPressed
+                                                        and event_der.mouseButton.button == Mouse::Left
+                                                        and event_der.mouseButton.x >= 5.f
+                                                        and event_der.mouseButton.x <= 75.f and event_der.mouseButton.y >= 5.f
+                                                        and event_der.mouseButton.y <= 35.f) {
+                                                            insert(a, polynom);
+                                                            count_poly++;
+                                                            window_der.close();
+                                                            window_poly.close();
+                                                        }
+
+                                                    }
+
+                                                    window_der.clear(Color::White);
+                                                    window_der.draw(shape_yes);
+                                                    window_der.draw(deriv);
+                                                    window_der.display();
+                                                }                                                
+                                            }
+                                        }
+                                        window_in_der.draw(text_der);
+                                        window_in_der.display();
+
+                                    }
+                                }
+                                if (event.type == Event::MouseButtonPressed and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 3.f and event.mouseButton.x <= 83.f and event.mouseButton.y >= 180.f
+                                and event.mouseButton.y <= 230.f) {
+                                    RenderWindow window_in_val(VideoMode(400, 200), "Input value");
+                                    int arg = 0;
+                                    string str = "", s = "";
+                                    Text text_val;
+                                    text_val.setFont(font);
+                                    text_val.setCharacterSize(20);
+                                    text_val.setPosition(Vector2f(50.f, 50.f));
+                                    text_val.setFillColor(Color::Black);
+                                    Text value;
+                                    value.setFont(font);
+                                    value.setCharacterSize(20);
+                                    value.setPosition(Vector2f(50.f, 50.f));
+                                    value.setFillColor(Color::Black);
+                                    while (window_in_val.isOpen()) {
+                                        Event event_in_val;
+                                        window_in_val.clear(Color::White);
+                                        while (window_in_val.pollEvent(event_in_val)) {
+                                            if (event_in_val.type == Event::Closed or
+                                                (event_in_val.type == Event::KeyPressed and event_in_val.key.code == Keyboard::Escape)) {
+                                                window_in_val.close();
+                                            }
+                                            if (event_in_val.type == Event::KeyPressed and event_in_val.key.code == Keyboard::BackSpace) {
+                                                for (int i = 0; i < str.size()-1; i++) {
+                                                    s += str[i];
+                                                }
+                                                str = s;
+                                                s = "";
+                                                text_val.setString(str);
+                                            }
+                                            else if (event_in_val.type == Event::TextEntered and event_in_val.text.unicode >= 32
+                                                and event_in_val.text.unicode <= 127) {
+                                                str += event_in_val.text.unicode;                                                
+                                                text_val.setString(str);
+                                            }
+                                            else if (event_in_val.type == Event::KeyPressed and event_in_val.key.code == Keyboard::Enter) {
+                                                window_in_val.close();
+                                                for (int i = 0; i < str.size(); i++) {
+                                                    arg = arg * 10 + (str[i] - '0');
+                                                }
+                                                value.setPosition(Vector2f(50.f, 50.f));
+                                                value.setString(function_value(arg, num_poly));
+                                                RenderWindow window_val(VideoMode(400, 200), "Function value");
+                                                while (window_val.isOpen()) {
+                                                    Event event_val;                                                    
+                                                    while (window_val.pollEvent(event_val)) {
+                                                        if (event_val.type == Event::Closed or
+                                                            (event_val.type == Event::KeyPressed
+                                                                and event_val.key.code == Keyboard::Escape)) {
+                                                            window_val.close();
+                                                        }
+                                                    }
+                                                    window_val.clear(Color::White);
+                                                    window_val.draw(value);
+                                                    window_val.display();
+                                                }
+                                            }
+                                        }
+                                        window_in_val.draw(text_val);
+                                        window_in_val.display();
+
+                                    }
+                                }
+                                if (event.type == Event::MouseButtonPressed and event.mouseButton.button == Mouse::Left
+                                and event.mouseButton.x >= 3.f and event.mouseButton.x <= 83.f and event.mouseButton.y >= 240.f
+                                and event.mouseButton.y <= 300.f) {
+                                    RenderWindow window_roots(VideoMode(400, 200), "Roots");
+                                    Text text_roots;
+                                    text_roots.setFont(font);
+                                    text_roots.setCharacterSize(20);
+                                    text_roots.setPosition(Vector2f(50.f, 50.f));
+                                    text_roots.setFillColor(Color::Black);
+                                    text_roots.setString(roots(num_poly));
+                                    while (window_roots.isOpen()) {
+                                        Event event_roots;
+                                        while (window_roots.pollEvent(event_roots)) {
+                                            if (event_roots.type == Event::Closed or
+                                            (event_roots.type == Event::KeyPressed and event_roots.key.code == Keyboard::Escape)) {
+                                                window_roots.close();
+                                            }
+                                        }
+                                        window_roots.clear(Color::White);
+                                        window_roots.draw(text_roots);
+                                        window_roots.display();
+                                    }
+                                }
+                            }
+                            draw_poly.setString(draw_list(list_by_num(num_poly)));                            
+                            window_poly.draw(draw_poly);
+                            window_poly.draw(shape_del);
+                            window_poly.draw(text_del);
+                            window_poly.draw(shape_der);
+                            window_poly.draw(text_der);
+                            window_poly.draw(shape_val);
+                            window_poly.draw(text_val);
+                            window_poly.draw(shape_roots);
+                            window_poly.draw(text_roots);
+                            window_poly.display();
+                        }
+                    }
+                }
+            }           
+
+        }
+        if (check) {
+            window_base.close();
+        }
+        window_base.clear(sf::Color(240, 240, 220));           
+        draw_base(window_base, a);
+        window_base.draw(div_shape);
+        window_base.draw(div_inscription);
+        window_base.draw(mul_shape);
+        window_base.draw(mul_inscription);        
+        window_base.draw(addition_shape);
+        window_base.draw(addition_inscription);
+        window_base.draw(del);
+        window_base.draw(del_inscription);
+        window_base.draw(shape);
+        window_base.draw(inscription);
+        window_base.draw(import_shape);
+        window_base.draw(import_poly);
+        window_base.display();
+    }
+    if (check) {
+        RenderWindow window_fail;
+        window_fail.create(VideoMode(400, 200), "FAILED");
+        Text failed;
+        failed.setFont(font);
+        failed.setCharacterSize(24);
+        failed.setString("SOMETHING GOES WRONG!");
+        failed.setFillColor(Color::Red);
+        failed.setPosition(Vector2f(50.f, 50.f));
+        while (window_fail.isOpen()) {
+            Event event;
+            while (window_fail.pollEvent(event)) {
+                if (event.type == Event::Closed or (event.type == Event::KeyPressed and event.key.code == Keyboard::Escape)) {
+                    window_fail.close();
+                }
+            }
+            window_fail.clear(Color::White);
+            window_fail.draw(failed);
+            window_fail.display();
+        }
+    }
+    return 0;
+}
+
+
+
+
+
